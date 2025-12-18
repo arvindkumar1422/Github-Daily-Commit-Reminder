@@ -1,0 +1,44 @@
+name: Daily GitHub Reminder
+
+on:
+  schedule:
+    # 9:00 PM IST = 15:30 UTC
+    - cron: '30 15 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  check-commits:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to push streak_data.json
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Daily Reminder Script
+      env:
+        GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        GH_USERNAME: ${{ secrets.GH_USERNAME }}
+        EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+      run: python main.py
+
+    - name: Commit and Push Streak Data
+      run: |
+        git config --global user.name 'GitHub Daily Reminder Bot'
+        git config --global user.email 'bot@noreply.github.com'
+        git add streak_data.json
+        # Only commit if there are changes
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update streak data [skip ci]" && git push)
