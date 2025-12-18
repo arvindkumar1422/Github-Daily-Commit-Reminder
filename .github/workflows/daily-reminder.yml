@@ -2,8 +2,8 @@ name: Daily GitHub Reminder
 
 on:
   schedule:
-    # 5:50 PM IST = 12:20 UTC (Running 10 mins early to beat GitHub queue delay)
-    - cron: '20 12 * * *'
+    # 7:50 AM IST = 02:20 UTC, 5:50 PM IST = 12:20 UTC (Running 10 mins early)
+    - cron: '20 2,12 * * *'
   workflow_dispatch: # Allow manual triggering
 
 jobs:
