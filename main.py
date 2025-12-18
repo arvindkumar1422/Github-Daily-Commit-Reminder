@@ -165,25 +165,17 @@ def main():
             for repo_contrib in contributions['commitContributionsByRepository']:
                 repo_name = repo_contrib['repository']['name']
                 count = repo_contrib['contributions']['totalCount']
-                repos.append(f'<div class="repo-item">📂 {repo_name} ({count} commits)</div>')
+                repos.append(f'<div class="repo-item"><span class="repo-icon">📂</span> {repo_name} <span style="margin-left:auto; font-weight:bold;">{count}</span></div>')
             
             stats_html = f"""
-            <div class="stats-box">
-                <div class="stat-item">
-                    <span class="stat-label">Commits Today:</span>
-                    <span class="stat-value">{total_commits}</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Current Streak:</span>
-                    <span class="stat-value">{current_streak} days</span>
-                    <span class="streak-badge">🔥 On Fire!</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Repositories:</span>
-                    <div class="repo-list">
-                        {''.join(repos)}
-                    </div>
-                </div>
+            <div class="streak-hero">
+                <div class="streak-count-big">{current_streak}</div>
+                <div class="streak-subtext">🔥 On Fire!</div>
+            </div>
+            
+            <div class="repo-section-title">Repositories Committed To</div>
+            <div class="repo-list">
+                {''.join(repos)}
             </div>
             """
             
@@ -210,20 +202,20 @@ def main():
 
             # Prepare reminder email
             stats_html = f"""
-            <div class="stats-box">
-                <div class="stat-item">
-                    <span class="stat-label">Current Streak:</span>
-                    <span class="stat-value">{current_streak} days</span>
-                </div>
-                <div class="stat-item" style="color: #d73a49;">
-                    ⚠️ No commits detected today yet!
-                </div>
+            <div class="streak-hero">
+                <div class="streak-count-big">{current_streak}</div>
+                <div class="streak-subtext warning">⚠️ Don't let it break!</div>
+            </div>
+            
+            <div class="stat-row">
+                <span class="stat-label">Commits Today</span>
+                <span class="stat-value" style="color: #d73a49;">0</span>
             </div>
             """
             
             context = {
                 "title": "⚠️ Reminder: Keep the Streak Alive!",
-                "message": "We haven't seen any commits from you today yet. There's still time to push some code and keep your streak going!",
+                "message": "Warning: You haven't committed yet today! Push some code to maintain your streak.",
                 "stats_section": stats_html,
                 "quote": random.choice(MOTIVATIONAL_QUOTES),
                 "timestamp": now_ist.strftime('%Y-%m-%d %H:%M:%S IST')
