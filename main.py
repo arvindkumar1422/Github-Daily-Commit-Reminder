@@ -21,7 +21,6 @@ EMAIL_RECIPIENT = os.getenv('EMAIL_RECIPIENT')
 
 # Constants
 IST = pytz.timezone('Asia/Kolkata')
-STREAK_FILE = 'streak_data.json'
 
 MOTIVATIONAL_QUOTES = [
     "Code is like humor. When you have to explain it, it’s bad. – Cory House",
@@ -39,18 +38,93 @@ MOTIVATIONAL_QUOTES = [
 def get_current_time_ist():
     return datetime.now(IST)
 
-def load_streak_data():
-    if os.path.exists(STREAK_FILE):
-        try:
-            with open(STREAK_FILE, 'r') as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            return {"current_streak": 0, "last_commit_date": None}
-    return {"current_streak": 0, "last_commit_date": None}
-
-def save_streak_data(data):
-    with open(STREAK_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+def fetch_streak_from_github():
+    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
+    
+    # Fetch contribution calendar (defaults to last year)
+    query = """
+    query($userName:String!) {
+      user(login: $userName) {
+        contributionsCollection {
+          contributionCalendar {
+            weeks {
+              contributionDays {
+                contributionCount
+                date
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    
+    variables = {"userName": GITHUB_USERNAME}
+    
+    response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
+    
+    if response.status_code != 200:
+        raise Exception(f"GitHub API failed: {response.text}")
+        
+    data = response.json()
+    calendar = data['data']['user']['contributionsCollection']['contributionCalendar']
+    
+    # Flatten the weeks into a single list of days
+    all_days = []
+    for week in calendar['weeks']:
+        for day in week['contributionDays']:
+            all_days.append(day)
+            
+    # Sort by date just in case
+    all_days.sort(key=lambda x: x['date'])
+    
+    # Calculate streak ending yesterday (or today)
+    # We iterate backwards from the last day in the calendar
+    current_streak = 0
+    
+    # The calendar goes up to "today" (UTC usually).
+    # We want to find the consecutive run of days with contributions > 0
+    # starting from the most recent day with contributions.
+    
+    # However, if today has 0 commits so far, we shouldn't break the streak yet if yesterday had commits.
+    # So we find the last day with contributions.
+    
+    # Let's iterate backwards
+    streak_days = 0
+    gap_found = False
+    
+    # We need to handle "today" carefully.
+    # If today has commits, streak includes today.
+    # If today has 0 commits, streak is whatever it was up to yesterday.
+    # But if yesterday also had 0, streak is 0.
+    
+    # Let's look at the last few days
+    today_str = datetime.now(pytz.UTC).strftime('%Y-%m-%d')
+    
+    # Reverse iteration
+    for i in range(len(all_days) - 1, -1, -1):
+        day = all_days[i]
+        count = day['contributionCount']
+        date = day['date']
+        
+        if count > 0:
+            streak_days += 1
+        else:
+            # If we hit a zero
+            # If this zero is "today" (and we haven't committed yet), we ignore it and continue checking yesterday.
+            # If this zero is "yesterday" or before, the streak is broken.
+            
+            if date == today_str:
+                continue # Skip today if it's 0, don't break streak yet
+            else:
+                # Break the streak
+                if streak_days > 0:
+                    break
+                # If we haven't started a streak yet (e.g. today 0, yesterday 0), keep going? No, streak is 0.
+                # Actually, if we haven't found any commits yet, and we hit a 0 for yesterday, streak is definitely 0.
+                break
+                
+    return streak_days
 
 def fetch_github_contributions(date_ist):
     headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
@@ -161,32 +235,13 @@ def main():
                     total_commits += repo_commits_today
                     repo_stats.append((repo_name, repo_commits_today))
         
-        streak_data = load_streak_data()
-        current_streak = streak_data.get('current_streak', 0)
-        last_commit_date = streak_data.get('last_commit_date')
+        # Calculate streak dynamically from GitHub API
+        current_streak = fetch_streak_from_github()
         
         today_str = now_ist.strftime('%Y-%m-%d')
         
         # Update streak logic
         if total_commits > 0:
-            if last_commit_date:
-                last_date = datetime.strptime(last_commit_date, '%Y-%m-%d').date()
-                current_date = now_ist.date()
-                
-                if (current_date - last_date).days == 1:
-                    current_streak += 1
-                elif (current_date - last_date).days > 1:
-                    current_streak = 1
-                # If same day, don't increment
-                elif (current_date - last_date).days == 0:
-                    pass # Already counted for today? Or maybe re-running script.
-            else:
-                current_streak = 1
-                
-            streak_data['current_streak'] = current_streak
-            streak_data['last_commit_date'] = today_str
-            save_streak_data(streak_data)
-            
             # Prepare success email
             repos_html = []
             for name, count in repo_stats:
@@ -216,15 +271,6 @@ def main():
             send_email(f"✅ GitHub Daily Update: {total_commits} Commits!", email_html)
             
         else:
-            # Reset streak if missed yesterday (and it's not the first run ever)
-            if last_commit_date:
-                last_date = datetime.strptime(last_commit_date, '%Y-%m-%d').date()
-                current_date = now_ist.date()
-                if (current_date - last_date).days > 1:
-                    current_streak = 0
-                    streak_data['current_streak'] = 0
-                    save_streak_data(streak_data)
-
             # Prepare reminder email
             stats_html = f"""
             <div class="streak-hero">
