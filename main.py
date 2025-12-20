@@ -270,8 +270,18 @@ def main():
             # Sort repos by count descending
             sorted_repos = sorted(repo_stats.items(), key=lambda item: item[1], reverse=True)
             
+            # Calculate total detailed contributions found
+            detailed_count = sum(repo_stats.values())
+            
+            # Calculate discrepancy (Calendar Total - Detailed Total)
+            other_count = display_count - detailed_count
+            
             for name, count in sorted_repos:
                 repos_html.append(f'<div class="repo-item"><span class="repo-icon">📂</span> {name} <span style="margin-left:auto; font-weight:bold;">{count}</span></div>')
+            
+            # Add "Other" category if there's a discrepancy (e.g. private repos, or timezone differences)
+            if other_count > 0:
+                repos_html.append(f'<div class="repo-item"><span class="repo-icon">🔒</span> Other / Private <span style="margin-left:auto; font-weight:bold;">{other_count}</span></div>')
             
             if not repos_html and display_count > 0:
                 repos_html.append('<div class="repo-item" style="font-style:italic; color:#666;">Contributions in other areas (Issues, PRs, or Private Repos)</div>')
