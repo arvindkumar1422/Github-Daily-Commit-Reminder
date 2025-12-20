@@ -141,6 +141,36 @@ def fetch_github_contributions(date_ist):
               }
             }
           }
+          issueContributionsByRepository {
+            repository {
+              name
+            }
+            contributions(first: 100) {
+              nodes {
+                occurredAt
+              }
+            }
+          }
+          pullRequestContributionsByRepository {
+            repository {
+              name
+            }
+            contributions(first: 100) {
+              nodes {
+                occurredAt
+              }
+            }
+          }
+          pullRequestReviewContributionsByRepository {
+            repository {
+              name
+            }
+            contributions(first: 100) {
+              nodes {
+                occurredAt
+              }
+            }
+          }
         }
       }
     }
@@ -182,7 +212,7 @@ def generate_email_content(template_path, context):
         template = f.read()
     
     for key, value in context.items():
-        template = template.replace(f"{{{{{key}}}}}", str(value))
+        template = template.replace(f"{{{{{{key}}}}}}", str(value))
     
     return template
 
@@ -197,31 +227,33 @@ def main():
         data = fetch_github_contributions(now_ist)
         
         # Process contributions to filter strictly for TODAY in IST
-        total_commits = 0
-        repo_stats = []
+        repo_stats = {}
         today_date = now_ist.date()
         
         if 'data' in data and 'user' in data['data'] and data['data']['user']['contributionsCollection']:
             collection = data['data']['user']['contributionsCollection']
             
-            for repo_data in collection['commitContributionsByRepository']:
-                repo_name = repo_data['repository']['name']
-                repo_commits_today = 0
-                
-                # Iterate through individual commits
-                if 'contributions' in repo_data and 'nodes' in repo_data['contributions']:
-                    for contribution in repo_data['contributions']['nodes']:
-                        # Parse ISO format (e.g., 2023-12-19T14:30:00Z)
-                        occurred_at_str = contribution['occurredAt'].replace('Z', '+00:00')
-                        occurred_at_utc = datetime.fromisoformat(occurred_at_str)
-                        occurred_at_ist = occurred_at_utc.astimezone(IST)
-                        
-                        if occurred_at_ist.date() == today_date:
-                            repo_commits_today += 1
-                
-                if repo_commits_today > 0:
-                    total_commits += repo_commits_today
-                    repo_stats.append((repo_name, repo_commits_today))
+            # Helper to process a list of contribution collections
+            def process_contributions(contribution_list):
+                if not contribution_list:
+                    return
+                for repo_data in contribution_list:
+                    repo_name = repo_data['repository']['name']
+                    
+                    if 'contributions' in repo_data and 'nodes' in repo_data['contributions']:
+                        for contribution in repo_data['contributions']['nodes']:
+                            # Parse ISO format (e.g., 2023-12-19T14:30:00Z)
+                            occurred_at_str = contribution['occurredAt'].replace('Z', '+00:00')
+                            occurred_at_utc = datetime.fromisoformat(occurred_at_str)
+                            occurred_at_ist = occurred_at_utc.astimezone(IST)
+                            
+                            if occurred_at_ist.date() == today_date:
+                                repo_stats[repo_name] = repo_stats.get(repo_name, 0) + 1
+
+            process_contributions(collection.get('commitContributionsByRepository', []))
+            process_contributions(collection.get('issueContributionsByRepository', []))
+            process_contributions(collection.get('pullRequestContributionsByRepository', []))
+            process_contributions(collection.get('pullRequestReviewContributionsByRepository', []))
         
         today_str = now_ist.strftime('%Y-%m-%d')
         
@@ -229,14 +261,16 @@ def main():
         current_streak, calendar_count = fetch_streak_from_github(today_str)
         
         # Use the calendar count as the source of truth for "Total Contributions"
-        # This ensures it matches the GitHub profile graph (Issues, PRs, Commits, etc.)
         display_count = calendar_count
         
         # Update streak logic
         if display_count > 0:
             # Prepare success email
             repos_html = []
-            for name, count in repo_stats:
+            # Sort repos by count descending
+            sorted_repos = sorted(repo_stats.items(), key=lambda item: item[1], reverse=True)
+            
+            for name, count in sorted_repos:
                 repos_html.append(f'<div class="repo-item"><span class="repo-icon">📂</span> {name} <span style="margin-left:auto; font-weight:bold;">{count}</span></div>')
             
             if not repos_html and display_count > 0:
