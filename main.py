@@ -73,11 +73,12 @@ def fetch_github_contributions(date_ist):
             repository {
               name
             }
-            contributions {
-              totalCount
+            contributions(first: 100) {
+              nodes {
+                occurredAt
+              }
             }
           }
-          totalCommitContributions
         }
       }
     }
@@ -130,9 +131,35 @@ def main():
         now_ist = get_current_time_ist()
         print(f"Current time (IST): {now_ist}")
         
+        # Fetch data (using the same range as before, but we will filter strictly in Python)
         data = fetch_github_contributions(now_ist)
-        contributions = data['data']['user']['contributionsCollection']
-        total_commits = contributions['totalCommitContributions']
+        
+        # Process contributions to filter strictly for TODAY in IST
+        total_commits = 0
+        repo_stats = []
+        today_date = now_ist.date()
+        
+        if 'data' in data and 'user' in data['data'] and data['data']['user']['contributionsCollection']:
+            collection = data['data']['user']['contributionsCollection']
+            
+            for repo_data in collection['commitContributionsByRepository']:
+                repo_name = repo_data['repository']['name']
+                repo_commits_today = 0
+                
+                # Iterate through individual commits
+                if 'contributions' in repo_data and 'nodes' in repo_data['contributions']:
+                    for contribution in repo_data['contributions']['nodes']:
+                        # Parse ISO format (e.g., 2023-12-19T14:30:00Z)
+                        occurred_at_str = contribution['occurredAt'].replace('Z', '+00:00')
+                        occurred_at_utc = datetime.fromisoformat(occurred_at_str)
+                        occurred_at_ist = occurred_at_utc.astimezone(IST)
+                        
+                        if occurred_at_ist.date() == today_date:
+                            repo_commits_today += 1
+                
+                if repo_commits_today > 0:
+                    total_commits += repo_commits_today
+                    repo_stats.append((repo_name, repo_commits_today))
         
         streak_data = load_streak_data()
         current_streak = streak_data.get('current_streak', 0)
@@ -161,11 +188,9 @@ def main():
             save_streak_data(streak_data)
             
             # Prepare success email
-            repos = []
-            for repo_contrib in contributions['commitContributionsByRepository']:
-                repo_name = repo_contrib['repository']['name']
-                count = repo_contrib['contributions']['totalCount']
-                repos.append(f'<div class="repo-item"><span class="repo-icon">📂</span> {repo_name} <span style="margin-left:auto; font-weight:bold;">{count}</span></div>')
+            repos_html = []
+            for name, count in repo_stats:
+                repos_html.append(f'<div class="repo-item"><span class="repo-icon">📂</span> {name} <span style="margin-left:auto; font-weight:bold;">{count}</span></div>')
             
             stats_html = f"""
             <div class="streak-hero">
@@ -175,7 +200,7 @@ def main():
             
             <div class="repo-section-title">Repositories Committed To</div>
             <div class="repo-list">
-                {''.join(repos)}
+                {''.join(repos_html)}
             </div>
             """
             
