@@ -119,18 +119,15 @@ def fetch_github_contributions(date_ist):
     start_of_day_ist = date_ist.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day_ist = date_ist.replace(hour=23, minute=59, second=59, microsecond=999999)
     
-    # Add buffer to ensure we don't miss anything due to timezone alignment
-    # We will filter strictly in Python later
-    buffer_start = start_of_day_ist - timedelta(days=1)
-    buffer_end = end_of_day_ist + timedelta(days=1)
-    
-    start_utc = buffer_start.astimezone(pytz.UTC).isoformat()
-    end_utc = buffer_end.astimezone(pytz.UTC).isoformat()
+    # Convert to UTC
+    start_utc = start_of_day_ist.astimezone(pytz.UTC).isoformat()
+    end_utc = end_of_day_ist.astimezone(pytz.UTC).isoformat()
 
     query = """
     query($from:DateTime!, $to:DateTime!) {
       viewer {
         contributionsCollection(from: $from, to: $to) {
+          restrictedContributionsCount
           commitContributionsByRepository {
             repository {
               name
@@ -168,6 +165,14 @@ def fetch_github_contributions(date_ist):
             contributions(first: 100) {
               nodes {
                 occurredAt
+              }
+            }
+          }
+          repositoryContributions(first: 100) {
+            nodes {
+              occurredAt
+              repository {
+                name
               }
             }
           }
@@ -241,18 +246,22 @@ def main():
                     
                     if 'contributions' in repo_data and 'nodes' in repo_data['contributions']:
                         for contribution in repo_data['contributions']['nodes']:
-                            # Parse ISO format (e.g., 2023-12-19T14:30:00Z)
-                            occurred_at_str = contribution['occurredAt'].replace('Z', '+00:00')
-                            occurred_at_utc = datetime.fromisoformat(occurred_at_str)
-                            occurred_at_ist = occurred_at_utc.astimezone(IST)
-                            
-                            if occurred_at_ist.date() == today_date:
-                                repo_stats[repo_name] = repo_stats.get(repo_name, 0) + 1
+                            # We trust the API date range now, but double check just in case
+                            repo_stats[repo_name] = repo_stats.get(repo_name, 0) + 1
 
             process_contributions(collection.get('commitContributionsByRepository', []))
             process_contributions(collection.get('issueContributionsByRepository', []))
             process_contributions(collection.get('pullRequestContributionsByRepository', []))
             process_contributions(collection.get('pullRequestReviewContributionsByRepository', []))
+            
+            # Process repository creations
+            if 'repositoryContributions' in collection and 'nodes' in collection['repositoryContributions']:
+                for repo_creation in collection['repositoryContributions']['nodes']:
+                    repo_name = repo_creation['repository']['name']
+                    repo_stats[repo_name] = repo_stats.get(repo_name, 0) + 1
+
+            # Get restricted count
+            restricted_count = collection.get('restrictedContributionsCount', 0)
         
         today_str = now_ist.strftime('%Y-%m-%d')
         
@@ -272,15 +281,19 @@ def main():
             # Calculate total detailed contributions found
             detailed_count = sum(repo_stats.values())
             
-            # Calculate discrepancy (Calendar Total - Detailed Total)
-            other_count = display_count - detailed_count
+            # Calculate discrepancy
+            other_count = display_count - detailed_count - restricted_count
+            if other_count < 0: other_count = 0
             
             for name, count in sorted_repos:
                 repos_html.append(f'<div class="repo-item"><span class="repo-icon">📂</span> {name} <span style="margin-left:auto; font-weight:bold;">{count}</span></div>')
             
+            if restricted_count > 0:
+                 repos_html.append(f'<div class="repo-item"><span class="repo-icon">🔒</span> Restricted / SSO <span style="margin-left:auto; font-weight:bold;">{restricted_count}</span></div>')
+            
             # Add "Other" category if there's a discrepancy (e.g. private repos, or timezone differences)
             if other_count > 0:
-                repos_html.append(f'<div class="repo-item"><span class="repo-icon">🔒</span> Other / Private <span style="margin-left:auto; font-weight:bold;">{other_count}</span></div>')
+                repos_html.append(f'<div class="repo-item"><span class="repo-icon">❓</span> Unaccounted <span style="margin-left:auto; font-weight:bold;">{other_count}</span></div>')
             
             if not repos_html and display_count > 0:
                 repos_html.append('<div class="repo-item" style="font-style:italic; color:#666;">Contributions in other areas (Issues, PRs, or Private Repos)</div>')
