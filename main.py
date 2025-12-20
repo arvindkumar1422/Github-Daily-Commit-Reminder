@@ -128,6 +128,11 @@ def fetch_github_contributions(date_ist):
       viewer {
         contributionsCollection(from: $from, to: $to) {
           restrictedContributionsCount
+          totalCommitContributions
+          totalIssueContributions
+          totalPullRequestContributions
+          totalPullRequestReviewContributions
+          totalRepositoryContributions
           commitContributionsByRepository {
             repository {
               name
@@ -262,6 +267,15 @@ def main():
 
             # Get restricted count
             restricted_count = collection.get('restrictedContributionsCount', 0)
+            
+            # Get API totals
+            total_commits = collection.get('totalCommitContributions', 0)
+            total_issues = collection.get('totalIssueContributions', 0)
+            total_prs = collection.get('totalPullRequestContributions', 0)
+            total_reviews = collection.get('totalPullRequestReviewContributions', 0)
+            total_repos_created = collection.get('totalRepositoryContributions', 0)
+            
+            api_total_count = total_commits + total_issues + total_prs + total_reviews + total_repos_created
         
         today_str = now_ist.strftime('%Y-%m-%d')
         
@@ -278,22 +292,28 @@ def main():
             # Sort repos by count descending
             sorted_repos = sorted(repo_stats.items(), key=lambda item: item[1], reverse=True)
             
-            # Calculate total detailed contributions found
-            detailed_count = sum(repo_stats.values())
+            # Calculate total detailed contributions found in the list
+            detailed_list_count = sum(repo_stats.values())
             
-            # Calculate discrepancy
-            other_count = display_count - detailed_count - restricted_count
-            if other_count < 0: other_count = 0
+            # Calculate discrepancy between API Totals and Detailed List (e.g. pagination limits)
+            missing_details_count = api_total_count - detailed_list_count
+            
+            # Calculate discrepancy between Calendar and API Totals (e.g. Gists, Wiki, etc)
+            unaccounted_count = display_count - api_total_count - restricted_count
+            if unaccounted_count < 0: unaccounted_count = 0
             
             for name, count in sorted_repos:
                 repos_html.append(f'<div class="repo-item"><span class="repo-icon">📂</span> {name} <span style="margin-left:auto; font-weight:bold;">{count}</span></div>')
             
+            if missing_details_count > 0:
+                 repos_html.append(f'<div class="repo-item"><span class="repo-icon">➕</span> Additional Commits/Issues <span style="margin-left:auto; font-weight:bold;">{missing_details_count}</span></div>')
+
             if restricted_count > 0:
                  repos_html.append(f'<div class="repo-item"><span class="repo-icon">🔒</span> Restricted / SSO <span style="margin-left:auto; font-weight:bold;">{restricted_count}</span></div>')
             
             # Add "Other" category if there's a discrepancy (e.g. private repos, or timezone differences)
-            if other_count > 0:
-                repos_html.append(f'<div class="repo-item"><span class="repo-icon">❓</span> Unaccounted <span style="margin-left:auto; font-weight:bold;">{other_count}</span></div>')
+            if unaccounted_count > 0:
+                repos_html.append(f'<div class="repo-item"><span class="repo-icon">❓</span> Gists / Wiki / Other <span style="margin-left:auto; font-weight:bold;">{unaccounted_count}</span></div>')
             
             if not repos_html and display_count > 0:
                 repos_html.append('<div class="repo-item" style="font-style:italic; color:#666;">Contributions in other areas (Issues, PRs, or Private Repos)</div>')
