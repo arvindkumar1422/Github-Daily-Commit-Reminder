@@ -212,7 +212,7 @@ def generate_email_content(template_path, context):
         template = f.read()
     
     for key, value in context.items():
-        template = template.replace(f"{{{{{{key}}}}}}", str(value))
+        template = template.replace("{{" + key + "}}", str(value))
     
     return template
 
