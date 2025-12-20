@@ -136,8 +136,13 @@ def fetch_github_contributions(date_ist):
     start_of_day_ist = date_ist.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day_ist = date_ist.replace(hour=23, minute=59, second=59, microsecond=999999)
     
-    start_utc = start_of_day_ist.astimezone(pytz.UTC).isoformat()
-    end_utc = end_of_day_ist.astimezone(pytz.UTC).isoformat()
+    # Add buffer to ensure we don't miss anything due to timezone alignment
+    # We will filter strictly in Python later
+    buffer_start = start_of_day_ist - timedelta(days=1)
+    buffer_end = end_of_day_ist + timedelta(days=1)
+    
+    start_utc = buffer_start.astimezone(pytz.UTC).isoformat()
+    end_utc = buffer_end.astimezone(pytz.UTC).isoformat()
 
     query = """
     query($userName:String!, $from:DateTime!, $to:DateTime!) {
