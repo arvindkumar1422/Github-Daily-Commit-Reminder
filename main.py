@@ -38,7 +38,7 @@ MOTIVATIONAL_QUOTES = [
 def get_current_time_ist():
     return datetime.now(IST)
 
-def fetch_streak_from_github():
+def fetch_streak_from_github(today_ist_str):
     headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
     
     # Fetch contribution calendar (defaults to last year)
@@ -78,28 +78,15 @@ def fetch_streak_from_github():
     # Sort by date just in case
     all_days.sort(key=lambda x: x['date'])
     
-    # Calculate streak ending yesterday (or today)
-    # We iterate backwards from the last day in the calendar
-    current_streak = 0
-    
-    # The calendar goes up to "today" (UTC usually).
-    # We want to find the consecutive run of days with contributions > 0
-    # starting from the most recent day with contributions.
-    
-    # However, if today has 0 commits so far, we shouldn't break the streak yet if yesterday had commits.
-    # So we find the last day with contributions.
-    
-    # Let's iterate backwards
+    # Find today's count (IST)
+    today_count = 0
+    for day in all_days:
+        if day['date'] == today_ist_str:
+            today_count = day['contributionCount']
+            break
+            
+    # Calculate streak
     streak_days = 0
-    gap_found = False
-    
-    # We need to handle "today" carefully.
-    # If today has commits, streak includes today.
-    # If today has 0 commits, streak is whatever it was up to yesterday.
-    # But if yesterday also had 0, streak is 0.
-    
-    # Let's look at the last few days
-    today_str = datetime.now(pytz.UTC).strftime('%Y-%m-%d')
     
     # Reverse iteration
     for i in range(len(all_days) - 1, -1, -1):
@@ -107,24 +94,20 @@ def fetch_streak_from_github():
         count = day['contributionCount']
         date = day['date']
         
+        # We only care about days up to today (IST)
+        if date > today_ist_str:
+            continue
+            
         if count > 0:
             streak_days += 1
         else:
             # If we hit a zero
-            # If this zero is "today" (and we haven't committed yet), we ignore it and continue checking yesterday.
-            # If this zero is "yesterday" or before, the streak is broken.
-            
-            if date == today_str:
+            if date == today_ist_str:
                 continue # Skip today if it's 0, don't break streak yet
             else:
-                # Break the streak
-                if streak_days > 0:
-                    break
-                # If we haven't started a streak yet (e.g. today 0, yesterday 0), keep going? No, streak is 0.
-                # Actually, if we haven't found any commits yet, and we hit a 0 for yesterday, streak is definitely 0.
                 break
                 
-    return streak_days
+    return streak_days, today_count
 
 def fetch_github_contributions(date_ist):
     headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
@@ -240,18 +223,25 @@ def main():
                     total_commits += repo_commits_today
                     repo_stats.append((repo_name, repo_commits_today))
         
-        # Calculate streak dynamically from GitHub API
-        current_streak = fetch_streak_from_github()
-        
         today_str = now_ist.strftime('%Y-%m-%d')
         
+        # Calculate streak and today's total contributions dynamically from GitHub API
+        current_streak, calendar_count = fetch_streak_from_github(today_str)
+        
+        # Use the calendar count as the source of truth for "Total Contributions"
+        # This ensures it matches the GitHub profile graph (Issues, PRs, Commits, etc.)
+        display_count = calendar_count
+        
         # Update streak logic
-        if total_commits > 0:
+        if display_count > 0:
             # Prepare success email
             repos_html = []
             for name, count in repo_stats:
                 repos_html.append(f'<div class="repo-item"><span class="repo-icon">📂</span> {name} <span style="margin-left:auto; font-weight:bold;">{count}</span></div>')
             
+            if not repos_html and display_count > 0:
+                repos_html.append('<div class="repo-item" style="font-style:italic; color:#666;">Contributions in other areas (Issues, PRs, or Private Repos)</div>')
+
             stats_html = f"""
             <div class="streak-hero">
                 <div class="streak-count-big">{current_streak}</div>
@@ -265,15 +255,15 @@ def main():
             """
             
             context = {
-                "title": "🎉 Great Job! Commits Detected",
-                "message": f"You've made <strong>{total_commits}</strong> commits today. Keep up the momentum!",
+                "title": "🎉 Great Job! Contributions Detected",
+                "message": f"You've made <strong>{display_count}</strong> contributions today. Keep up the momentum!",
                 "stats_section": stats_html,
                 "quote": random.choice(MOTIVATIONAL_QUOTES),
                 "timestamp": now_ist.strftime('%Y-%m-%d %H:%M:%S IST')
             }
             
             email_html = generate_email_content('email_template.html', context)
-            send_email(f"✅ GitHub Daily Update: {total_commits} Commits!", email_html)
+            send_email(f"✅ GitHub Daily Update: {display_count} Contributions!", email_html)
             
         else:
             # Prepare reminder email
@@ -284,21 +274,21 @@ def main():
             </div>
             
             <div class="stat-row">
-                <span class="stat-label">Commits Today</span>
+                <span class="stat-label">Contributions Today</span>
                 <span class="stat-value" style="color: #d73a49;">0</span>
             </div>
             """
             
             context = {
                 "title": "⚠️ Reminder: Keep the Streak Alive!",
-                "message": "Warning: You haven't committed yet today! Push some code to maintain your streak.",
+                "message": "Warning: You haven't contributed yet today! Push some code to maintain your streak.",
                 "stats_section": stats_html,
                 "quote": random.choice(MOTIVATIONAL_QUOTES),
                 "timestamp": now_ist.strftime('%Y-%m-%d %H:%M:%S IST')
             }
             
             email_html = generate_email_content('email_template.html', context)
-            send_email("⚠️ GitHub Daily Reminder: No Commits Yet!", email_html)
+            send_email("⚠️ GitHub Daily Reminder: No Contributions Yet!", email_html)
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
