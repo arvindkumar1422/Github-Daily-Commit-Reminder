@@ -128,8 +128,8 @@ def fetch_github_contributions(date_ist):
     end_utc = buffer_end.astimezone(pytz.UTC).isoformat()
 
     query = """
-    query($userName:String!, $from:DateTime!, $to:DateTime!) {
-      user(login: $userName) {
+    query($from:DateTime!, $to:DateTime!) {
+      viewer {
         contributionsCollection(from: $from, to: $to) {
           commitContributionsByRepository {
             repository {
@@ -177,7 +177,6 @@ def fetch_github_contributions(date_ist):
     """
     
     variables = {
-        "userName": GITHUB_USERNAME,
         "from": start_utc,
         "to": end_utc
     }
@@ -230,8 +229,8 @@ def main():
         repo_stats = {}
         today_date = now_ist.date()
         
-        if 'data' in data and 'user' in data['data'] and data['data']['user']['contributionsCollection']:
-            collection = data['data']['user']['contributionsCollection']
+        if 'data' in data and 'viewer' in data['data'] and data['data']['viewer']['contributionsCollection']:
+            collection = data['data']['viewer']['contributionsCollection']
             
             # Helper to process a list of contribution collections
             def process_contributions(contribution_list):
